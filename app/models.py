@@ -1,18 +1,20 @@
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Text
 from sqlalchemy.orm import relationship
-from app.database import Base
+import database
 
-class User(Base):
+class User(database.Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
     
-    # User to Jobs relationship
+    # Day 7: नवीन कॉलम - 'admin' किंवा 'candidate'
+    role = Column(String, default="candidate") 
+    
     jobs = relationship("Job", back_populates="owner")
 
-class Job(Base):
+class Job(database.Base):
     __tablename__ = "jobs"
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True, nullable=False)
