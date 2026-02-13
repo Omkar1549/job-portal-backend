@@ -4,7 +4,7 @@ from jose import jwt, JWTError
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
-import database, models
+from . import database, models
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 SECRET_KEY = "OMKAR_ULTIMATE_SECRET_DAY_7"
@@ -34,7 +34,6 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = db.query(models.User).filter(models.User.email == email).first()
     if user is None: raise exception
     return user
-
 
 def admin_required(current_user: models.User = Depends(get_current_user)):
     if current_user.role != "admin":
