@@ -1,5 +1,22 @@
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
+from datetime import datetime
+
+# --- USER SCHEMAS ---
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str
+
+class UserOut(BaseModel):
+    id: int
+    email: str
+    role: str
+    
+    class Config:
+        from_attributes = True
+
+# --- JOB SCHEMAS ---
 
 class JobBase(BaseModel):
     title: str
@@ -14,19 +31,11 @@ class JobResponse(JobBase):
     id: int
     owner_id: int
     is_open: bool
+    
     class Config:
         from_attributes = True
 
-class UserCreate(BaseModel):
-    email: EmailStr
-    password: str
-
-class UserOut(BaseModel):
-    id: int
-    email: EmailStr
-    role: str
-    class Config:
-        from_attributes = True
+# --- TOKEN SCHEMA ---
 
 class Token(BaseModel):
     access_token: str
