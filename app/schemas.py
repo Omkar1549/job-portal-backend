@@ -1,23 +1,24 @@
 from pydantic import BaseModel, EmailStr
-from typing import List, Optional
+from typing import Optional, List
 from datetime import datetime
 
-# --- USER SCHEMAS ---
-
+# USER SCHEMAS
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
 
 class UserOut(BaseModel):
     id: int
-    email: str
+    email: EmailStr
     role: str
-    
     class Config:
         from_attributes = True
 
-# --- JOB SCHEMAS ---
+class Token(BaseModel):
+    access_token: str
+    token_type: str
 
+# JOB SCHEMAS
 class JobBase(BaseModel):
     title: str
     company: str
@@ -30,13 +31,16 @@ class JobCreate(JobBase):
 class JobResponse(JobBase):
     id: int
     owner_id: int
-    is_open: bool
-    
     class Config:
         from_attributes = True
 
-# --- TOKEN SCHEMA ---
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
+# --- DAY 10: APPLICATION SCHEMAS ---
+class ApplicationOut(BaseModel):
+    id: int
+    job_id: int
+    candidate_id: int
+    ai_analysis: str
+    status: str
+    applied_at: datetime
+    class Config:
+        from_attributes = True
