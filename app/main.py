@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List
 
-# Relative Imports
+# Internal Module Imports
 try:
     from . import models, schemas, database, auth_utils, ai_service
 except ImportError:
@@ -13,22 +13,57 @@ except ImportError:
 models.Base.metadata.create_all(bind=database.engine)
 
 app = FastAPI(
-    title="Job Portal Pro: Day 9 AI & RBAC Edition 🚀",
-    description="Advanced job portal with AI-powered resume matching",
-    version="1.0.0"
+    title="Job Portal Pro: AI & RBAC Edition 🚀",
+    description="Advanced backend system with Automated Admin Seeding and AI Integration",
+    version="1.1.0"
 )
+
+# --- AUTOMATED ADMIN SEEDER ---
+
+@app.on_event("startup")
+def create_default_admin():
+    """
+    Startup event to ensure at least one Admin exists in the system.
+    Default Credentials:
+    - Email: admin@jobportal.com
+    - Password: adminpassword123
+    """
+    db = database.SessionLocal()
+    try:
+        admin_email = "admin@jobportal.com"
+        # Check if the admin already exists
+        admin = db.query(models.User).filter(models.User.email == admin_email).first()
+        
+        if not admin:
+            print("LOG: No admin detected. Seeding default admin user...")
+            new_admin = models.User(
+                email=admin_email,
+                hashed_password=auth_utils.hash_password("adminpassword123"),
+                role="admin" # Explicitly setting role as admin
+            )
+            db.add(new_admin)
+            db.commit()
+            print("LOG: Default admin created successfully! ✅")
+        else:
+            print("LOG: Admin user already exists. Skipping seed.")
+    except Exception as e:
+        print(f"LOG ERROR: Failed to seed admin: {e}")
+    finally:
+        db.close()
 
 # --- AUTHENTICATION ENDPOINTS ---
 
 @app.post("/register", response_model=schemas.UserOut)
 def register(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
-    """Register a new user"""
+    """Registers a new user as a 'candidate' by default."""
     db_user = db.query(models.User).filter(models.User.email == user.email).first()
     if db_user:
         raise HTTPException(status_code=400, detail="Email is already registered!")
+    
     new_user = models.User(
         email=user.email, 
-        hashed_password=auth_utils.hash_password(user.password)
+        hashed_password=auth_utils.hash_password(user.password),
+        role="candidate" # Default role for new sign-ups
     )
     db.add(new_user)
     db.commit()
@@ -37,109 +72,54 @@ def register(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
 
 @app.post("/login", response_model=schemas.Token)
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(database.get_db)):
-    """Login and get access token"""
+    """Authenticates user and returns a JWT token."""
     user = db.query(models.User).filter(models.User.email == form_data.username).first()
     if not user or not auth_utils.verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(status_code=403, detail="Incorrect email or password!")
+        raise HTTPException(status_code=403, detail="Invalid credentials!")
+    
     access_token = auth_utils.create_access_token(data={"sub": user.email})
     return {"access_token": access_token, "token_type": "bearer"}
 
-# --- AI ENDPOINTS ---
+# --- ADMIN CONTROL PANEL ---
 
-@app.post("/ai/match-resume")
-async def match_resume(
-    job_description: str, 
-    resume_text: str, 
-    current_user: models.User = Depends(auth_utils.get_current_user)
+@app.put("/admin/applications/{app_id}/status")
+def update_application_status(
+    app_id: int, 
+    new_status: str, 
+    db: Session = Depends(database.get_db), 
+    current_admin: models.User = Depends(auth_utils.admin_required)
 ):
     """
-    Day 9 Feature: Analyzes compatibility between a Job Description and a Resume.
-    
-    - Requires authentication
-    - Returns match score and AI analysis
-    - Uses Gemini 2.5 Flash AI
-    
-    Parameters:
-    - job_description: Full job description text
-    - resume_text: Candidate's resume text
+    Day 11 Mastery Test: Update application status.
+    Strictly restricted to Admin users only.
     """
-    try:
-        if not job_description or not resume_text:
-            raise HTTPException(
-                status_code=400, 
-                detail="Both Job Description and Resume Text are required."
-            )
-        
-        analysis = await ai_service.match_resume_with_ai(job_description, resume_text)
-        
-        return {
-            "candidate": current_user.email,
-            "matching_analysis": analysis,
-            "model": "Gemini 2.5 Flash AI"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # 1. Fetch the application
+    application = db.query(models.Application).filter(models.Application.id == app_id).first()
+    
+    if not application:
+        raise HTTPException(status_code=404, detail="Application record not found.")
 
-@app.get("/ai/generate-description")
-async def get_ai_description(
-    job_title: str,
-    current_user: models.User = Depends(auth_utils.get_current_user)
-):
-    """
-    Day 8 Feature: Generate professional job descriptions using AI.
-    
-    - Requires authentication
-    - Uses Gemini AI to generate descriptions
-    
-    Parameters:
-    - job_title: Title of the job position
-    """
-    try:
-        if not job_title:
-            raise HTTPException(status_code=400, detail="Job title is required.")
-        
-        description = await ai_service.generate_job_description(job_title)
-        
-        return {
-            "job_title": job_title,
-            "ai_generated_description": description
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # 2. Update status logic
+    application.status = new_status
+    db.commit()
+    db.refresh(application)
 
-# --- ADMIN ONLY ROUTES ---
+    return {
+        "message": f"Application status successfully updated to: {new_status}",
+        "application_id": app_id,
+        "updated_by": current_admin.email
+    }
 
 @app.get("/admin/users", response_model=List[schemas.UserOut])
-def get_all_users(
-    db: Session = Depends(database.get_db), 
-    current_admin: models.User = Depends(auth_utils.admin_required)
-):
-    """Get all registered users (Admin only)"""
+def list_users(db: Session = Depends(database.get_db), current_admin: models.User = Depends(auth_utils.admin_required)):
+    """Fetch all registered users. Admin only."""
     return db.query(models.User).all()
 
-@app.delete("/admin/jobs/{job_id}")
-def admin_delete_job(
-    job_id: int, 
-    db: Session = Depends(database.get_db), 
-    current_admin: models.User = Depends(auth_utils.admin_required)
-):
-    """Delete a job posting (Admin only)"""
-    job = db.query(models.Job).filter(models.Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found!")
-    db.delete(job)
-    db.commit()
-    return {"message": "Admin deleted the job successfully."}
-
-# --- REGULAR JOB ROUTES ---
+# --- JOB & AI SERVICES ---
 
 @app.post("/jobs/", response_model=schemas.JobResponse)
-def create_job(
-    job: schemas.JobCreate, 
-    db: Session = Depends(database.get_db), 
-    current_user: models.User = Depends(auth_utils.get_current_user)
-):
-    """Create a new job posting"""
+def create_job(job: schemas.JobCreate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth_utils.get_current_user)):
+    """Create a new job posting."""
     new_job = models.Job(**job.dict(), owner_id=current_user.id)
     db.add(new_job)
     db.commit()
@@ -148,14 +128,14 @@ def create_job(
 
 @app.get("/jobs/", response_model=List[schemas.JobResponse])
 def get_jobs(db: Session = Depends(database.get_db)):
-    """Get all job postings"""
+    """Public route to list all jobs."""
     return db.query(models.Job).all()
 
 @app.get("/")
-def home():
-    """Health check endpoint"""
+def api_root():
+    """Server status check."""
     return {
-        "status": "online",
-        "message": "Job Portal is Live! AI Resume Matcher is ready.",
-        "version": "1.0.0"
+        "status": "Online",
+        "milestone": "Day 11: Mid-way Audit Complete",
+        "admin_seeder": "Active"
     }
